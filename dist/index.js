@@ -30925,8 +30925,9 @@ function checkRosdeps(packageSelection, skipKeys, workspaceDir, options, ros1Dis
  * @param testPackageSelection the package selection option
  * @param colconExtraArgs the extra args for 'colcon test'
  * @param coverageIgnorePattern the coverage filter pattern to use for lcov
+ * @param coverageIncludePattern the coverage include pattern to use for lcov
  */
-function runTests(colconCommandPrefix, options, testPackageSelection, colconExtraArgs, coverageIgnorePattern) {
+function runTests(colconCommandPrefix, options, testPackageSelection, colconExtraArgs, coverageIgnorePattern, coverageIncludePattern) {
     return __awaiter(this, void 0, void 0, function* () {
         const doLcovResult = !isWindows; // lcov-result not supported in Windows
         const doTests = !isWindows; // Temporarily disable colcon test on Windows to unblock Windows CI builds: https://github.com/ros-tooling/action-ros-ci/pull/712#issuecomment-969495087
@@ -30961,13 +30962,24 @@ function runTests(colconCommandPrefix, options, testPackageSelection, colconExtr
         if (doLcovResult) {
             // ignoreReturnCode, check comment above in --initial
             const colconLcovResultCmd = [
-                `colcon`,
-                `lcov-result`,
-                ...testPackageSelection,
-                ...coverageIgnorePattern,
-                `--verbose`,
+                    'lcov',
+                    '--capture',
+                    '--directory build/',
+                    '--output-file lcov/total_coverage.info',
+                    '--ignore-errors mismatch',
+                    ...coverageIgnorePattern,
+                    ...coverageIncludePattern,
+                    `--verbose`,
             ];
-            yield execShellCommand([...colconCommandPrefix, ...colconLcovResultCmd], Object.assign(Object.assign({}, options), { ignoreReturnCode: true }), false);
+            yield execShellCommand([...colconLcovResultCmd], Object.assign(Object.assign({}, options), { ignoreReturnCode: true }), false);
+		
+            const generateCoverageReport = [
+                    'genhtml',
+                    'lcov/total_coverage.info',
+                    '--output-directory',
+                    'coverage_report',
+            ];
+            yield execShellCommand([...generateCoverageReport], Object.assign(Object.assign({}, options), { ignoreReturnCode: true }), false);
         }
         const colconCoveragepyResultCmd = [
             `colcon`,
@@ -30993,7 +31005,11 @@ function run_throw() {
             : [];
         const coverageIgnorePatternInput = core.getInput("coverage-ignore-pattern");
         const coverageIgnorePattern = coverageIgnorePatternInput
-            ? ["--filter", coverageIgnorePatternInput]
+            ? ["--remove", coverageIgnorePatternInput]
+            : [];
+        const coverageIncludePatternInput = core.getInput("coverage-include-pattern");
+        const coverageIncludePattern = coverageIncludePatternInput
+            ? ["--include", coverageIncludePatternInput]
             : [];
         const colconExtraArgsInput = core.getInput("colcon-extra-args");
         const colconExtraArgs = colconExtraArgsInput ? [colconExtraArgsInput] : [];
@@ -31267,7 +31283,7 @@ done`;
         }
         yield execShellCommand([...colconCommandPrefix, ...colconBuildCmd], options, false);
         if (!skipTests) {
-            yield runTests(colconCommandPrefix, options, testPackageSelection, colconExtraArgs, coverageIgnorePattern);
+            yield runTests(colconCommandPrefix, options, testPackageSelection, colconExtraArgs, coverageIgnorePattern, coverageIncludePattern);
         }
         else {
             core.info("Skipping tests");
